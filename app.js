@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const { Client } = require('pg');
 const amqp = require('amqplib');
+const rateLimit = require("express-rate-limit");
 const app = express();
 const PORT = 8000;
 
@@ -24,7 +25,7 @@ const dbConfig = {
 const client = new Client(dbConfig);
 client.connect();
 
-const MAX_ERRORS = 400;
+const MAX_ERRORS = 4;
 let requestCounter = 0;
 let errorCounter = 0;
 let circuitState = CircuitBreakerStates.CLOSED;
@@ -42,30 +43,6 @@ const closeCircuit = () => {
 	console.log('Circuit is CLOSED now.');
 }
 
-// Handle the retry of a failed request
-const handleRetry = async (id) => {
-	try {
-		let isinDB = await client.query('SELECT title FROM animetwo where id= ($1)', [id]);
-		let response;
-		if (isinDB.rows.length === 0) {
-			let apiResponse = await axios.get(API_URL + id);
-			response = apiResponse.data.data.title;
-			await client.query('INSERT INTO animetwo (id, title) VALUES ($1,$2)', [id, response]);
-		} else {
-			response = isinDB.rows[0].title;
-		}
-		console.log(response);
-	} catch (err) {
-		console.log(err.message);
-		errorCounter++;
-		if (errorCounter > MAX_ERRORS) {
-			openCircuit();
-			return;
-		}
-		setTimeout(() => handleRetry(id), 1000); // retry after 1 second
-	}
-};
-
 // Get anime by id
 const getAnimeById = async (id) => {
 	try {
@@ -73,14 +50,14 @@ const getAnimeById = async (id) => {
 		let response;
 		console.log('db response: ', isinDB.rows);
 		if (isinDB.rows.length === 0) {
-			console.log('not in db');
 			response = await axios.get(API_URL + id, { timeout: 1000 }); // set max timeout to 10 seconds
-			console.log('api response: ', response.data.data.title);
+			if (response.status === 429) {
+				throw new Error('Rate limit exceeded');
+			}
 			response = response.data.data.title;
 			await client.query('INSERT INTO animetwo (id, title) VALUES ($1,$2)', [id, response]);
 		}
 		else response = isinDB.rows[0].title;
-		console.log(response);
 		return response;
 	} catch (err) {
 		console.log(err.message);
@@ -99,6 +76,10 @@ const handleGetAnime = async (req, res) => {
 		const id = req.query.id;
 		console.log(`Request #${requestCounter} to get anime with id ${id}`);
 		const response = await getAnimeById(id);
+		if (!response) {
+			res.status(404).send('Anime not found');
+			return;
+		}
 		res.send(response);
 	} catch (err) {
 		console.log(err.message);
@@ -117,6 +98,16 @@ const handleGetAnime = async (req, res) => {
 		res.end();
 	}
 }
+
+// Set up rate limiter
+const limiter = rateLimit({
+	windowMs: 1000, // 1 second
+	max: 3, // limit each IP to 3 requests per windowMs
+	message: "Too many requests from this IP, please try again later"
+});
+
+// Apply rate limiter to all requests
+app.use(limiter);
 
 // Set up the app
 app.get('/getanime', handleGetAnime);
