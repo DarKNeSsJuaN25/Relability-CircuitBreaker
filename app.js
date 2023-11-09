@@ -71,8 +71,11 @@ const getAnimeById = async (id) => {
 	try {
 		let isinDB = await client.query('SELECT title FROM animetwo where id= ($1)', [id]);
 		let response;
+		console.log('db response: ', isinDB.rows);
 		if (isinDB.rows.length === 0) {
-			response = await axios.get(API_URL + id);
+			console.log('not in db');
+			response = await axios.get(API_URL + id, { timeout: 1000 }); // set max timeout to 10 seconds
+			console.log('api response: ', response.data.data.title);
 			response = response.data.data.title;
 			await client.query('INSERT INTO animetwo (id, title) VALUES ($1,$2)', [id, response]);
 		}
@@ -94,6 +97,7 @@ const handleGetAnime = async (req, res) => {
 			return;
 		}
 		const id = req.query.id;
+		console.log(`Request #${requestCounter} to get anime with id ${id}`);
 		const response = await getAnimeById(id);
 		res.send(response);
 	} catch (err) {
