@@ -25,7 +25,7 @@ const dbConfig = {
 const client = new Client(dbConfig);
 client.connect();
 
-const MAX_ERRORS = 4;
+const MAX_ERRORS = 400;
 let requestCounter = 0;
 let errorCounter = 0;
 let circuitState = CircuitBreakerStates.CLOSED;
@@ -50,7 +50,7 @@ const getAnimeById = async (id) => {
 		let response;
 		console.log('db response: ', isinDB.rows);
 		if (isinDB.rows.length === 0) {
-			response = await axios.get(API_URL + id, { timeout: 1000 }); // set max timeout to 10 seconds
+			response = await axios.get(API_URL + id, { timeout: 10000 }); // set max timeout to 10 seconds
 			if (response.status === 429) {
 				throw new Error('Rate limit exceeded');
 			}
