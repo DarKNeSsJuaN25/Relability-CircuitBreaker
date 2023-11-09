@@ -25,11 +25,10 @@ const handleRetry = async (id) => {
 
         // process the data
         response = data.data.data.title;
-        console.log('res: ', response);
         await client.query('INSERT INTO animetwo (id, title) VALUES ($1,$2)', [id, response]);
 
     } catch (err) {
-        console.log('Error handleRetry: ', err.message);
+        console.log(err.message);
         // retry the query after a delay
         await new Promise(resolve => setTimeout(resolve, 5000));
         await handleRetry(id);
@@ -44,7 +43,7 @@ const startWorker = async () => {
   console.log('Worker is waiting for messages');
   await channel.assertQueue(queueName, { durable: true });
   channel.consume(queueName, async (msg) => {
-    const { id } = JSON.parse(msg.content.toString());
+    const id = JSON.parse(msg.content.toString()).query.id;
     try {
       // apply rate limiting
       const limiter = rateLimit({
